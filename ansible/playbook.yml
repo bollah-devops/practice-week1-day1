@@ -1,5 +1,5 @@
 ---
-- name: Staging app-server
+- name: Deploy Flask App with Docker and Nginx
   hosts: all
   become: true
 
@@ -7,6 +7,66 @@
     - name: Update apt cache
       apt:
         update_cache: yes
+
+    - name: Install Docker dependencies
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - python3-pip
+        state: present
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present   
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: deb https://download.docker.com/linux/ubuntu jammy stable
+        state: present
+     
+    - name: Update apt cache again
+      apt:
+        update_cache: yes
+
+    - name: Install Docker
+      apt:
+        name: docker-ce
+        state: present
+
+    - name: Install Docker Python SDK
+      pip:
+        name: docker
+
+    - name: Start and enable Docker
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Pull Flask Docker image
+      docker_image:
+        name: tawa123/practice-flask
+        tag: latest
+        source: pull
+
+    - name: Stop old Flask container if running
+      docker_container:
+        name: flask-app
+        state: absent
+        force_kill: yes
+
+    - name: Run Flask container
+      docker_container:
+        name: flask-app
+        image: tawa123/practice-flask:latest
+        state: started
+        restart_policy: always
+        ports:
+          - "5000:5000"    
 
     - name: Install Nginx
       apt:
@@ -18,6 +78,41 @@
          name: nginx
          state: started
          enabled: yes  
+
+    - name: Create Nginx reverse proxy config
+      copy:
+        dest: /etc/nginx/sites-available/flask-app
+        content: |
+          server {
+              listen 80;
+
+              location / {
+                  proxy_pass http://127.0.0.1:5000;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+              }
+          }
+
+    - name: Enable Nginx site
+      file:
+        src: /etc/nginx/sites-available/flask-app
+        dest: /etc/nginx/sites-enabled/flask-app
+        state: link     
+
+    - name: Remove default Nginx site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+
+    - name: Reload Nginx
+      service:
+        name: nginx
+        state: restarted
+
+    - name: Verify app responds
+      uri:
+        url: http://localhost
+        status_code: 200     
 
     - name: Create webteam group
       group: 
