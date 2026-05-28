@@ -1,0 +1,102 @@
+---
+- name: Staging app-server
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install Nginx
+      apt:
+         name: nginx
+         state: present
+
+    - name: Start and enable Nginx
+      service:
+         name: nginx
+         state: started
+         enabled: yes  
+
+    - name: Create webteam group
+      group: 
+        name: webteam
+        state: present
+
+    - name: Create developer user
+      user: 
+        name: developer
+        groups: webteam
+        append: yes
+        state: present
+
+    - name: Create webadmin user
+      user:
+        name: webadmin
+        groups: webteam
+        append: yes
+        state: present
+
+    - name: Create readonly user
+      user:
+        name: readonly
+        state: present        
+
+    - name: Create web directory
+      file:
+         path: /var/www/html
+         state: directory
+         mode: '0755'     
+
+    - name: Deploy custom index.html
+      copy:
+        dest: /var/www/html/index.html
+        content: |
+          <html>
+          <head><title>Practice Server</title></head>
+          <body>
+          <h1>Nginx deployed with Ansible</h1>
+          </body>
+          </html>
+
+    - name: Disable root SSH login
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^PermitRootLogin'
+        line: 'PermitRootLogin no'    
+
+    - name: Disable password authentication
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^PasswordAuthentication'
+        line: 'PasswordAuthentication no'
+
+    - name: Restart SSH service
+      service:
+        name: ssh
+        state: restarted
+
+    - name: Create script directory
+      file:
+        path: /opt/scripts
+        state: directory
+        mode: '0755'
+
+    - name: Deploy health check script
+      copy:
+        dest: /opt/scripts/healthcheck.sh 
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          echo "System Health Check"
+          date
+          uptime
+          free -h
+          df -h    
+
+    - name: Schedule cron job every 5 minutes
+      cron:
+        name: "Health Check Cron" 
+        minute: "*/5"
+        job: "/opt/scripts/healthcheck.sh >> /var/log/healthcheck.log"     
